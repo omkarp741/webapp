@@ -78,13 +78,15 @@
             }
         }
                 
-        stage('login & push') {
+        stage('Docker login & push') {
             steps {
                 container('docker') {
                  sh 'docker login -u omkarp741 -p dckr_pat_FkhKsHPuriVgi5-w9gNqLhQWd4o'
 
                 // Push Docker image
                 sh 'docker push omkarp741/web-app:$BUILD_NUMBER'
+                sh 'docker tag omkarp741/web-app:$BUILD_NUMBER omkarp741/web-app:latest'
+                sh 'docker push omkarp741/web-app:latest'
                 }
             }
         }        
