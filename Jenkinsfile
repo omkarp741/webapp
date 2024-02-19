@@ -72,7 +72,7 @@
             steps {
                 container('docker') {
                 // Build Docker image with Tag as Build number
-                sh 'docker build -t omkarp741/java-dockerapp:$BUILD_NUMBER -f Dockerfile .'
+                sh 'docker build -t omkarp741/web-app:$BUILD_NUMBER -f Dockerfile .'
                 
                 }
             }
@@ -84,7 +84,7 @@
                  sh 'docker login -u omkarp741 -p dckr_pat_FkhKsHPuriVgi5-w9gNqLhQWd4o'
 
                 // Push Docker image
-                sh 'docker push omkarp741/java-dockerapp:$BUILD_NUMBER'
+                sh 'docker push omkarp741/web-app:$BUILD_NUMBER'
                 }
             }
         }        
