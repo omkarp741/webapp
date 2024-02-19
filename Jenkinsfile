@@ -1,121 +1,94 @@
-pipeline {
-    
-	agent any
-/*	
-	tools {
-        maven "maven3"
+  pipeline {
+     agent {
+        kubernetes {
+          yaml '''
+            apiVersion: v1
+            kind: Pod
+            spec:
+              containers:
+              - name: maven
+                image: maven:alpine
+                command:
+                - cat
+                tty: true
+              - name: sonar
+                image: sonarsource/sonar-scanner-cli
+                command:
+                - cat
+                tty: true
+                env:
+                  - name: SONAR_HOST_URL
+                    value: "http://a0185931b1aef443bbf58d9be7ce6af1-1311541991.ap-south-1.elb.amazonaws.com"
+                  - name: SONAR_TOKEN
+                    value: "sqa_858e5a8d6cbf37d5da83ce29758bb6a7dd1009bd"
+              - name: docker
+                image: docker:dind
+                command: ["sh"]
+                args: ["/usr/local/bin/dockerd-entrypoint.sh"]
+                tty: true
+                env:
+                  - name: DOCKER_TLS_CERTDIR
+                    value: ""
+                  - name: DOCKER_HOST
+                    value: tcp://localhost:2375
+                securityContext:
+                  privileged: true
+                  runAsUser: 0
+            '''
     }
-*/	
-    environment {
-        NEXUS_VERSION = "nexus3"
-        NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "172.31.40.209:8081"
-        NEXUS_REPOSITORY = "vprofile-release"
-	NEXUS_REPO_ID    = "vprofile-release"
-        NEXUS_CREDENTIAL_ID = "nexuslogin"
-        ARTVERSION = "${env.BUILD_ID}"
-    }
-	
-    stages{
+  }
+
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('maven') {
+                // Get some code from a GitHub repository
+                git 'https://github.com/omkarp741/webapp.git'
+                
+                }
+            }
+        }
+                
+        stage('build'){
+            steps {
+                container('maven') {
+                    // Run Maven on a Unix agent.
+                sh "mvn clean install -DskipTests"
+                }
+            }
+        }
         
-        stage('BUILD'){
+        stage('code coverage'){
             steps {
-                sh 'mvn clean install -DskipTests'
-            }
-            post {
-                success {
-                    echo 'Now Archiving...'
-                    archiveArtifacts artifacts: '**/target/*.war'
+                container('sonar') {
+                    // Run Sonar CLI.
+                sh "sonar-scanner -Dsonar.projectKey=webapp -Dsonar.sources=src/main/java/ -Dsonar.language=java -Dsonar.java.binaries=target/classes/com/visualpathit/account"
                 }
             }
         }
 
-	stage('UNIT TEST'){
+        stage('Docker build & tag') {
             steps {
-                sh 'mvn test'
-            }
-        }
-
-	stage('INTEGRATION TEST'){
-            steps {
-                sh 'mvn verify -DskipUnitTests'
-            }
-        }
-		
-        stage ('CODE ANALYSIS WITH CHECKSTYLE'){
-            steps {
-                sh 'mvn checkstyle:checkstyle'
-            }
-            post {
-                success {
-                    echo 'Generated Analysis Result'
+                container('docker') {
+                // Build Docker image with Tag as Build number
+                sh 'docker build -t omkarp741/java-dockerapp:$BUILD_NUMBER -f Dockerfile .'
+                
                 }
             }
         }
-
-        stage('CODE ANALYSIS with SONARQUBE') {
-          
-		  environment {
-             scannerHome = tool 'sonarscanner4'
-          }
-
-          steps {
-            withSonarQubeEnv('sonar-pro') {
-               sh '''${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=vprofile \
-                   -Dsonar.projectName=vprofile-repo \
-                   -Dsonar.projectVersion=1.0 \
-                   -Dsonar.sources=src/ \
-                   -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/ \
-                   -Dsonar.junit.reportsPath=target/surefire-reports/ \
-                   -Dsonar.jacoco.reportsPath=target/jacoco.exec \
-                   -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml'''
-            }
-
-            timeout(time: 10, unit: 'MINUTES') {
-               waitForQualityGate abortPipeline: true
-            }
-          }
-        }
-
-        stage("Publish to Nexus Repository Manager") {
+                
+        stage('login & push') {
             steps {
-                script {
-                    pom = readMavenPom file: "pom.xml";
-                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
-                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
-                    artifactPath = filesByGlob[0].path;
-                    artifactExists = fileExists artifactPath;
-                    if(artifactExists) {
-                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version} ARTVERSION";
-                        nexusArtifactUploader(
-                            nexusVersion: NEXUS_VERSION,
-                            protocol: NEXUS_PROTOCOL,
-                            nexusUrl: NEXUS_URL,
-                            groupId: pom.groupId,
-                            version: ARTVERSION,
-                            repository: NEXUS_REPOSITORY,
-                            credentialsId: NEXUS_CREDENTIAL_ID,
-                            artifacts: [
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: artifactPath,
-                                type: pom.packaging],
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: "pom.xml",
-                                type: "pom"]
-                            ]
-                        );
-                    } 
-		    else {
-                        error "*** File: ${artifactPath}, could not be found";
-                    }
+                container('docker') {
+                 sh 'docker login -u omkarp741 -p dckr_pat_FkhKsHPuriVgi5-w9gNqLhQWd4o'
+
+                // Push Docker image
+                sh 'docker push omkarp741/java-dockerapp:$BUILD_NUMBER'
                 }
             }
-        }
+        }        
 
 
-    }
-
-
+}
 }
